@@ -2,9 +2,9 @@
 <!--  VIORANT — GITHUB OVERVIEW -->
 <!-- ===================================== -->
 
-<p align="center">
+<!-- align="center">
   <img src="https://storage.googleapis.com/msgsndr/Xh5ZKB0nq4lHrPYObeee/media/6894c124c9041b9e91e3d5c4.png" width="900px" alt="Viorant Banner">
-</p>
+</p>-->
 
 <h1 align="center">Viorant</h1>
 
