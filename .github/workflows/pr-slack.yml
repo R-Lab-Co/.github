@@ -27,7 +27,10 @@ on:
         required: false
         default: 'https://viorant.atlassian.net'
     secrets:
-      SLACK_RELEASE_WEBHOOK:
+      # Distinct from SLACK_RELEASE_WEBHOOK, which targets #release. There is
+      # deliberately no fallback to it: a silent fallback would keep announcing
+      # PRs in the release channel.
+      SLACK_ENG_WEBHOOK:
         description: Incoming webhook for #engineering. Absent → the run warns and posts nothing.
         required: false
 
@@ -128,7 +131,7 @@ jobs:
       - name: Post to Slack
         if: steps.gate.outputs.post == 'true'
         env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_RELEASE_WEBHOOK }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_ENG_WEBHOOK }}
           JIRA_BASE_URL: ${{ inputs.jira-base-url }}
           EVENT: ${{ steps.gate.outputs.event }}
           REPO: ${{ github.repository }}
