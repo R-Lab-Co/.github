@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test the PR → Slack notifier
+        run: node --test 'scripts/pr-slack/*.test.mjs'
+      - name: Shellcheck the reusable workflow's gate script
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/gate.sh
+          import yaml
+          wf = yaml.safe_load(open('.github/workflows/pr-slack.yml'))
+          steps = wf['jobs']['notify']['steps']
+          gate = next(s for s in steps if s.get('id') == 'gate')
+          print('#!/usr/bin/env bash')
+          print(gate['run'])
+          PY
+          shellcheck --severity=warning /tmp/gate.sh
