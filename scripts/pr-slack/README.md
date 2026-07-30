@@ -36,8 +36,11 @@ jobs:
 Requirements:
 
 - The repo's CI workflow must be named `CI` (matched by `workflow_run.workflows`).
-- `SLACK_RELEASE_WEBHOOK` must be visible to the repo. If it is not, the run
-  logs a warning and posts nothing — it never fails.
+- `SLACK_ENG_WEBHOOK` must be visible to the repo. If it is not, the run logs a
+  warning and posts nothing — it never fails. This is **not**
+  `SLACK_RELEASE_WEBHOOK`, which targets `#release`; there is no fallback
+  between them, because a silent fallback would announce PRs in the wrong
+  channel.
 - No fork PRs. `workflow_run.pull_requests` is only populated for same-repo
   branches, which is how every Viorant PR is raised.
 
