@@ -86,6 +86,13 @@ The ✅ / 🔄 wording is chosen at post time from the PR's `reviewDecision`, wh
 GitHub holds at `CHANGES_REQUESTED` across pushes until a later review
 supersedes it. No extra state is stored for it.
 
+One race is handled explicitly. If a reviewer requests changes while a CI run is
+still in flight, that run goes green on the **rejected** commit. Announcing it
+would spend the announcement and leave the real fix silent — the exact bug the 🔄
+event exists to prevent. So a green whose head sha equals the commit the
+changes-requested review was left on is skipped *without* re-adding the label,
+keeping the fix's green announceable.
+
 **Known limitation:** only a formal **Request changes** review clears the label.
 Asking for changes in a plain PR comment leaves it in place, and the fix's green
 stays silent.

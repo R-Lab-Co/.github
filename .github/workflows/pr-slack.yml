@@ -71,6 +71,7 @@ jobs:
           # fetched. `pull_requests` is populated because Viorant has no forks.
           RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           RUN_HTML_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
           set -euo pipefail
@@ -139,6 +140,17 @@ jobs:
           # review supersedes it, so a green arriving while it still reads that
           # is the author answering the request — name it as such.
           if [ "$(jq -r '.reviewDecision // ""' <<<"$pr")" = 'CHANGES_REQUESTED' ]; then
+            # …but only if the green is for code *newer* than what was rejected.
+            # A CI run already in flight when the review landed goes green on the
+            # rejected commit; announcing that would spend the announcement and
+            # leave the actual fix silent — the very bug this event exists to
+            # fix. Skipping without labelling keeps the fix's green announceable.
+            reviewed_sha="$(gh api "repos/$GH_REPO/pulls/$RUN_PR_NUMBER/reviews?per_page=100" \
+                              --jq '[.[] | select(.state == "CHANGES_REQUESTED")] | last | .commit_id // ""' \
+                            2>/dev/null || echo '')"
+            if [ -n "$reviewed_sha" ] && [ "$reviewed_sha" = "${RUN_HEAD_SHA:-}" ]; then
+              skip "green is for the rejected commit ${reviewed_sha:0:7} — holding the announcement for the fix"
+            fi
             out event rereview
           else
             out event ci
