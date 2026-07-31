@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // PR → Slack notification. Zero-dependency (Node 22 global fetch).
 //
-// Called by .github/workflows/pr-slack.yml for two events:
-//   opened  a PR was opened / reopened / marked ready for review against main
-//   ci      that PR's CI run just went green for the first time
+// Called by .github/workflows/pr-slack.yml for three events:
+//   opened    a PR was opened / reopened / marked ready for review against main
+//   ci        that PR's CI run just went green for the first time
+//   rereview  a green landed while the PR still reads CHANGES_REQUESTED — the
+//             author has answered a review and it is back in the queue
 //
 // Env:
 //   SLACK_WEBHOOK   Slack incoming webhook URL                  (required)
-//   EVENT           opened | ci                                 (required)
+//   EVENT           opened | ci | rereview                      (required)
 //   REPO            owner/name                                  (required)
 //   PR_NUMBER       231                                         (required)
 //   PR_TITLE        PR title                                    (required)
@@ -15,7 +17,7 @@
 //   PR_AUTHOR       GitHub login                                (required)
 //   HEAD_REF        feat/vior-231-…                             (optional)
 //   BASE_REF        main                                        (optional)
-//   RUN_URL         link to the CI run                          (ci only)
+//   RUN_URL         link to the CI run                 (ci / rereview only)
 //   JIRA_BASE_URL   https://viorant.atlassian.net               (optional)
 //
 // Exit 0 unless --strict is passed. A Slack hiccup must never read as a broken
@@ -25,6 +27,25 @@ import { pathToFileURL } from 'node:url';
 
 const JIRA_DEFAULT_BASE = 'https://viorant.atlassian.net';
 const TITLE_MAX = 240;
+
+// The announced moments. `opened` is the fallback for an unrecognised event, so
+// a future gate change degrades to an extra post rather than to silence.
+const LEAD = {
+  opened: '🔵 *New PR*',
+  ci: '✅ *CI green — ready for review*',
+  rereview: '🔄 *Changes addressed — ready for re-review*',
+};
+
+// Fallback text drives Slack's notifications and must stay plain — no mrkdwn
+// links, or the notification renders the raw `<url|label>` syntax.
+const FALLBACK = {
+  opened: (repo, n, title) => `New PR — ${repo} #${n}: ${title}`,
+  ci: (repo, n, title) => `CI green — ${repo} #${n} ready for review: ${title}`,
+  rereview: (repo, n, title) => `Changes addressed — ${repo} #${n} ready for re-review: ${title}`,
+};
+
+// Both green events were triggered by a CI run, so both have one to link.
+const CARRIES_RUN = new Set(['ci', 'rereview']);
 
 // Slack parses `<url|label>` as a link and bare `&` as an entity start, so a PR
 // title carrying either would break or forge the links around it.
@@ -52,19 +73,14 @@ export function buildMessage(ctx) {
   const jiraKey = extractJiraKey(prTitle, headRef);
   const title = escapeMrkdwn(truncate(prTitle));
 
-  const lead =
-    event === 'ci' ? '✅ *CI green — ready for review*' : '🔵 *New PR*';
+  const lead = LEAD[event] ?? LEAD.opened;
 
   const contextParts = [`\`${escapeMrkdwn(author)}\` → \`${escapeMrkdwn(baseRef || 'main')}\``];
   if (jiraKey) contextParts.push(`<${jiraBase}/browse/${jiraKey}|${jiraKey}>`);
-  if (event === 'ci' && runUrl) contextParts.push(`<${runUrl}|⚙️ CI run>`);
+  if (CARRIES_RUN.has(event) && runUrl) contextParts.push(`<${runUrl}|⚙️ CI run>`);
 
   return {
-    // Fallback text drives notifications and must stay plain — no mrkdwn links.
-    text:
-      event === 'ci'
-        ? `CI green — ${shortRepo} #${prNumber} ready for review: ${truncate(prTitle)}`
-        : `New PR — ${shortRepo} #${prNumber}: ${truncate(prTitle)}`,
+    text: (FALLBACK[event] ?? FALLBACK.opened)(shortRepo, prNumber, truncate(prTitle)),
     blocks: [
       {
         type: 'section',

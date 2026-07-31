@@ -1,17 +1,21 @@
 name: PR → Slack (reusable)
 
-# Announces two moments in Viorant's review flow to #engineering:
+# Announces three moments in Viorant's review flow to #engineering:
 #   🔵 a PR was opened against main
 #   ✅ that PR's CI went green for the first time — ready for review
+#   🔄 a green landed while the PR still reads CHANGES_REQUESTED — the author
+#      answered a review, so it is back in the reviewer's queue
 #
 # Called by `.github/workflows/pr-slack.yml` in viorant-hub / -control / -shared
 # / -runner. Deliberately decoupled from each repo's ci.yml: it is not a
 # required status check and cannot gate a merge in either direction.
 #
 # Re-run noise is gated by a `ci:green` label on the PR itself. Green posts only
-# when the label is absent; a non-success run removes it so a later green
-# re-announces. The state is therefore visible on the PR and self-healing —
-# delete the label by hand to force a re-announce.
+# when the label is absent. Two things remove it: a non-success CI run, and a
+# review requesting changes — so an ordinary push onto an already-green PR stays
+# silent, while the green that answers a review re-announces. The state is
+# therefore visible on the PR and self-healing — delete the label by hand to
+# force a re-announce.
 
 on:
   workflow_call:
@@ -50,7 +54,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           LABEL: ${{ inputs.label }}
-          # `pull_request` payload — everything needed is already here.
+          # `pull_request` payload — everything needed is already here. The
+          # `pull_request_review` payload carries the same object, so the review
+          # branch reads these too and only needs the review's own state.
           PR_EVENT_NUMBER: ${{ github.event.pull_request.number }}
           PR_EVENT_TITLE: ${{ github.event.pull_request.title }}
           PR_EVENT_URL: ${{ github.event.pull_request.html_url }}
@@ -58,10 +64,14 @@ jobs:
           PR_EVENT_HEAD: ${{ github.event.pull_request.head.ref }}
           PR_EVENT_BASE: ${{ github.event.pull_request.base.ref }}
           PR_EVENT_DRAFT: ${{ github.event.pull_request.draft }}
+          # `pull_request_review` payload — approved | changes_requested |
+          # commented.
+          REVIEW_STATE: ${{ github.event.review.state }}
           # `workflow_run` payload — carries only the PR number, so the rest is
           # fetched. `pull_requests` is populated because Viorant has no forks.
           RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           RUN_HTML_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
           set -euo pipefail
@@ -85,12 +95,28 @@ jobs:
             exit 0
           fi
 
+          # A review never posts anything — the reviewer already knows what they
+          # asked for. `changes_requested` only forgets the announced green, so
+          # that the green answering it re-announces. `branches:` is not a legal
+          # filter for pull_request_review, so base is checked here.
+          if [ "$EVENT_NAME" = 'pull_request_review' ]; then
+            state="$(printf '%s' "${REVIEW_STATE:-}" | tr '[:upper:]' '[:lower:]')"
+            if [ "$state" != 'changes_requested' ]; then
+              skip "review state '$state' — only changes_requested clears '$LABEL'"
+            fi
+            if [ "$PR_EVENT_BASE" != 'main' ]; then
+              skip "review on PR #$PR_EVENT_NUMBER targeting '$PR_EVENT_BASE', not main"
+            fi
+            gh pr edit "$PR_EVENT_NUMBER" --remove-label "$LABEL" >/dev/null 2>&1 || true
+            skip "changes requested on PR #$PR_EVENT_NUMBER — cleared '$LABEL' so the fix's green re-announces"
+          fi
+
           if [ -z "${RUN_PR_NUMBER:-}" ]; then
             skip 'CI run is not attached to a PR (push to main)'
           fi
 
           pr="$(gh pr view "$RUN_PR_NUMBER" \
-                 --json number,title,url,author,baseRefName,headRefName,isDraft,labels)"
+                 --json number,title,url,author,baseRefName,headRefName,isDraft,labels,reviewDecision)"
 
           base="$(jq -r '.baseRefName' <<<"$pr")"
           if [ "$base" != 'main' ]; then
@@ -110,7 +136,26 @@ jobs:
             skip "PR #$RUN_PR_NUMBER already carries '$LABEL' — green already announced"
           fi
 
-          out event ci
+          # `reviewDecision` stays CHANGES_REQUESTED across pushes until a new
+          # review supersedes it, so a green arriving while it still reads that
+          # is the author answering the request — name it as such.
+          if [ "$(jq -r '.reviewDecision // ""' <<<"$pr")" = 'CHANGES_REQUESTED' ]; then
+            # …but only if the green is for code *newer* than what was rejected.
+            # A CI run already in flight when the review landed goes green on the
+            # rejected commit; announcing that would spend the announcement and
+            # leave the actual fix silent — the very bug this event exists to
+            # fix. Skipping without labelling keeps the fix's green announceable.
+            reviewed_sha="$(gh api "repos/$GH_REPO/pulls/$RUN_PR_NUMBER/reviews?per_page=100" \
+                              --jq '[.[] | select(.state == "CHANGES_REQUESTED")] | last | .commit_id // ""' \
+                            2>/dev/null || echo '')"
+            if [ -n "$reviewed_sha" ] && [ "$reviewed_sha" = "${RUN_HEAD_SHA:-}" ]; then
+              skip "green is for the rejected commit ${reviewed_sha:0:7} — holding the announcement for the fix"
+            fi
+            out event rereview
+          else
+            out event ci
+          fi
+          out remember true
           out number "$(jq -r '.number' <<<"$pr")"
           out title "$(jq -r '.title' <<<"$pr")"
           out url "$(jq -r '.url' <<<"$pr")"
@@ -146,8 +191,11 @@ jobs:
 
       # After the post, never before: a lost label re-announces (harmless),
       # a label set on a failed post loses the announcement entirely.
+      #
+      # Gated on its own output rather than on the event name, so adding a
+      # fourth message cannot silently break the label bookkeeping.
       - name: Remember that green was announced
-        if: steps.gate.outputs.post == 'true' && steps.gate.outputs.event == 'ci'
+        if: steps.gate.outputs.post == 'true' && steps.gate.outputs.remember == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

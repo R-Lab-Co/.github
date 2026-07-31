@@ -55,6 +55,34 @@ test('ci message says ready for review and links the run', () => {
   assert.match(text, /<https:\/\/github\.com\/viorant\/viorant-hub\/actions\/runs\/999\|.*CI run>/);
 });
 
+test('rereview message says changes addressed, not first-pass ready for review', () => {
+  const text = flat(buildMessage({ ...base, event: 'rereview' }));
+  assert.match(text, /Changes addressed/);
+  assert.match(text, /re-review/);
+  assert.doesNotMatch(text, /CI green/);
+});
+
+test('rereview message links the CI run like ci does', () => {
+  const text = flat(buildMessage({ ...base, event: 'rereview' }));
+  assert.match(text, /<https:\/\/github\.com\/viorant\/viorant-hub\/actions\/runs\/999\|.*CI run>/);
+});
+
+test('ci and rereview are visually distinguishable at a glance', () => {
+  const ci = buildMessage({ ...base, event: 'ci' }).blocks[0].text.text;
+  const rereview = buildMessage({ ...base, event: 'rereview' }).blocks[0].text.text;
+  assert.notEqual(ci, rereview);
+  assert.match(ci, /✅/);
+  assert.match(rereview, /🔄/);
+});
+
+// The gate emits one of three strings. If a fourth is ever added there and
+// forgotten here, degrade to a post rather than to an empty message.
+test('an unrecognised event degrades to the opened message', () => {
+  const text = flat(buildMessage({ ...base, event: 'something-new' }));
+  assert.match(text, /New PR/);
+  assert.ok(buildMessage({ ...base, event: 'something-new' }).text.length > 0);
+});
+
 test('a missing Jira key drops the link rather than emitting a broken one', () => {
   const text = flat(buildMessage({ ...base, event: 'ci', prTitle: 'bump deps', headRef: 'chore/bump' }));
   assert.doesNotMatch(text, /atlassian/);
@@ -85,8 +113,8 @@ test('buildMessage truncates an absurdly long title', () => {
   assert.match(msg.blocks[0].text.text, /…/);
 });
 
-test('the fallback text is plain and non-empty for both events', () => {
-  for (const event of ['opened', 'ci']) {
+test('the fallback text is plain and non-empty for every event', () => {
+  for (const event of ['opened', 'ci', 'rereview']) {
     const { text } = buildMessage({ ...base, event });
     assert.ok(text.length > 0);
     assert.doesNotMatch(text, /[<>]/);
