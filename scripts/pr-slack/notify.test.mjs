@@ -71,8 +71,21 @@ test('ci and rereview are visually distinguishable at a glance', () => {
   const ci = buildMessage({ ...base, event: 'ci' }).blocks[0].text.text;
   const rereview = buildMessage({ ...base, event: 'rereview' }).blocks[0].text.text;
   assert.notEqual(ci, rereview);
-  assert.match(ci, /✅/);
+  assert.match(ci, /👀/);
   assert.match(rereview, /🔄/);
+});
+
+// `#engineering` also carries the /fin-task close lines, which own ✅ for
+// "merged & Done". A PR that merely *needs* review must not wear the glyph that
+// means the work already shipped.
+test('no lead reuses the merged-&-done glyph', () => {
+  for (const event of ['opened', 'ci', 'rereview']) {
+    assert.doesNotMatch(
+      buildMessage({ ...base, event }).blocks[0].text.text,
+      /✅/,
+      `${event} lead must not use ✅ — it collides with /fin-task's merged & Done line`,
+    );
+  }
 });
 
 // The gate emits one of three strings. If a fourth is ever added there and
