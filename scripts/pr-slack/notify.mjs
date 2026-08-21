@@ -32,7 +32,7 @@ const TITLE_MAX = 240;
 // a future gate change degrades to an extra post rather than to silence.
 const LEAD = {
   opened: '🔵 *New PR*',
-  ci: '✅ *CI green — ready for review*',
+  ci: '👀 *CI green — ready for review*',
   rereview: '🔄 *Changes addressed — ready for re-review*',
 };
 

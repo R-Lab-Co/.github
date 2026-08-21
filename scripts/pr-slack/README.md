@@ -5,7 +5,7 @@ Announces three moments of Viorant's review flow to `#engineering`:
 | When | Message |
 | --- | --- |
 | A non-draft PR is opened / reopened / marked ready, targeting `main` | 🔵 **New PR** |
-| That PR's `CI` workflow goes green **for the first time** | ✅ **CI green — ready for review** |
+| That PR's `CI` workflow goes green **for the first time** | 👀 **CI green — ready for review** |
 | CI goes green again after a reviewer requested changes | 🔄 **Changes addressed — ready for re-review** |
 
 Between them these are the two moments a PR needs a reviewer's attention: it is
@@ -65,10 +65,10 @@ label is absent:
 
 ```
 push 1  → ❌ red                 silent, label absent
-push 2  → ✅ green            →  POST ✅, label added
+push 2  → ✅ green            →  POST 👀, label added
 push 3  → ✅ green               silent, label present
 push 4  → ❌ red                 silent, label removed
-push 5  → ✅ green            →  POST ✅, label re-added
+push 5  → ✅ green            →  POST 👀, label re-added
 review  → 🔴 changes requested   silent, label removed
 push 6  → ✅ green            →  POST 🔄, label re-added
 ```
@@ -82,7 +82,7 @@ The state is visible on the PR and self-healing — remove the label by hand to
 force a re-announce. The label is added *after* a successful post, so a dropped
 label re-announces (harmless) rather than swallowing the announcement.
 
-The ✅ / 🔄 wording is chosen at post time from the PR's `reviewDecision`, which
+The 👀 / 🔄 wording is chosen at post time from the PR's `reviewDecision`, which
 GitHub holds at `CHANGES_REQUESTED` across pushes until a later review
 supersedes it. No extra state is stored for it.
 
